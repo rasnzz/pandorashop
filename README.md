@@ -42,16 +42,26 @@
 
 1. Клонируйте репозиторий:
 ```bash
-git clone [<repository-url>](https://github.com/rasnzz/pandorashop.git)
+git clone https://github.com/rasnzz/pandorashop.git
 cd pandorashop
 ```
 
-2. Установите зависимости:
+2. Создать виртуальное окружение:
+```bash
+python3 -m venv venv
+```
+
+3. Активировать витруальное окружение
+```bash
+source venv/bin/activate
+```
+
+4. Установите зависимости:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Настройте переменные окружения в файле `.env`:
+5. Настройте переменные окружения в файле `.env`:
 ```env
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
 ADMIN_IDS=comma_separated_list_of_admin_telegram_ids
@@ -59,9 +69,9 @@ GOOGLE_SHEET_ID=your_google_sheet_id_here
 GOOGLE_CREDENTIALS_FILE=credentials.json
 ```
 
-4. Добавьте файл `credentials.json` с ключами доступа к Google API
+6. Добавьте файл `credentials.json` с ключами доступа к Google API
 
-5. Запустите бота:
+7. Запустите бота:
 ```bash
 python bot.py
 ```
