@@ -123,6 +123,7 @@ async def update_articles_cache():
                     if article:
                         # Store actual row number (i, which starts from 2)
                         articles_cache[article] = (sheet_name, i, has_sizes)
+                        logging.debug(f"Cached article '{article}' from row {i} in sheet '{sheet_name}'")
                         
             logging.debug(f"Processed {sheet_name}: has_sizes={has_sizes}, {len(articles_cache)} articles in cache")
     
