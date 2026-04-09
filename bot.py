@@ -131,9 +131,23 @@ async def update_articles_cache():
         logging.error(f"Error updating articles cache: {e}")
 
 def find_product_by_article(article: str) -> Optional[Tuple[str, int]]:
-    """Find product by article in cache"""
+    """Find product by article in cache with case-insensitive search"""
+    article_stripped = article.strip().lower()
+    
+    # Direct match first
     if article in articles_cache:
         return articles_cache[article][0], articles_cache[article][1]  # sheet name, row number
+    
+    # Case-insensitive search
+    for cached_article, (sheet_name, row_num, has_sizes) in articles_cache.items():
+        if cached_article.lower() == article_stripped:
+            return sheet_name, row_num
+    
+    # Partial match if nothing found
+    for cached_article, (sheet_name, row_num, has_sizes) in articles_cache.items():
+        if article_stripped in cached_article.lower() or cached_article.lower() in article_stripped:
+            return sheet_name, row_num
+    
     return None
 
 def get_product_info(sheet_name: str, row_num: int) -> Optional[Dict]:
