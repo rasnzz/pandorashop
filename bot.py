@@ -115,17 +115,16 @@ async def update_articles_cache():
             # Get all values from the sheet
             rows = worksheet.get_all_values()
             
-            # Skip header row if exists (first row is headers)
-            start_row = 1 if len(rows) > 0 else 0
-            
-            for i, row in enumerate(rows[start_row:], start=start_row+1):
-                if len(row) > 3:  # Ensure row has at least 4 columns (A, B, C, D)
-                    article = row[2].strip() if len(row) > 2 else ''  # Column C (3rd index, 0-based)
+            # Skip header row if exists (first row is headers) - we start from row 2 (index 1 in 0-based indexing)
+            # Google Sheets rows are 1-indexed, so first data row is row 2
+            for i, row in enumerate(rows[1:], start=2):  # Start from row 2 (second row)
+                if len(row) > 2:  # Ensure row has at least 3 columns (A, B, C)
+                    article = row[2].strip() if len(row) > 2 else ''  # Column C (index 2, 0-based)
                     if article:
-                        # Store actual row number (i + 1 because rows are 1-indexed)
-                        articles_cache[article] = (sheet_name, i + 1, has_sizes)
+                        # Store actual row number (i, which starts from 2)
+                        articles_cache[article] = (sheet_name, i, has_sizes)
                         
-            logging.debug(f"Processed {sheet_name}: has_sizes={has_sizes}")
+            logging.debug(f"Processed {sheet_name}: has_sizes={has_sizes}, {len(articles_cache)} articles in cache")
     
     except Exception as e:
         logging.error(f"Error updating articles cache: {e}")
