@@ -2579,7 +2579,8 @@ async def handle_photo_upload(message: Message):
         await message.bot.download(photo.file_id, photo_path)
         
         # Clear the state
-        await spam_manager.clear_photo_upload_state(message.from_user.id)
+        if message.from_user.id in spam_manager.photo_upload_states:
+            del spam_manager.photo_upload_states[message.from_user.id]
         
         await message.answer(
             f"✅ Фото для поста '{post_name}' успешно загружено!\n\n"
@@ -2592,7 +2593,7 @@ async def handle_photo_upload(message: Message):
         )
     else:
         # If not in photo upload state, handle as a general photo
-        pass
+        await message.answer("❌ Нет активного поста для добавления фото. Сначала создайте или выберите пост.")
 
 
 @dp.message(F.document)
@@ -2604,8 +2605,8 @@ async def handle_document_upload(message: Message):
     # Check if it's an image document
     doc = message.document
     if doc.mime_type and doc.mime_type.startswith('image/'):
-    # Check if user is in photo upload state
-    post_name = spam_manager.photo_upload_states.get(message.from_user.id)
+        # Check if user is in photo upload state
+        post_name = spam_manager.photo_upload_states.get(message.from_user.id)
         
         if post_name:
             # Extract file extension from original filename
@@ -2617,9 +2618,9 @@ async def handle_document_upload(message: Message):
                 # Download the photo
                 await message.bot.download(doc.file_id, photo_path)
                 
-    # Clear the state
-    if message.from_user.id in spam_manager.photo_upload_states:
-        del spam_manager.photo_upload_states[message.from_user.id]
+                # Clear the state
+                if message.from_user.id in spam_manager.photo_upload_states:
+                    del spam_manager.photo_upload_states[message.from_user.id]
                 
                 await message.answer(
                     f"✅ Фото для поста '{post_name}' успешно загружено!\n\n"
@@ -2634,7 +2635,7 @@ async def handle_document_upload(message: Message):
                 await message.answer("❌ Неподдерживаемый формат изображения. Используйте JPG, PNG, GIF, BMP или WEBP.")
         else:
             # If not in photo upload state, handle as a general document
-            pass
+            await message.answer("❌ Нет активного поста для добавления фото. Сначала создайте или выберите пост.")
     else:
         # This isn't an image document, pass to other handlers
         pass
