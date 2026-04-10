@@ -35,6 +35,7 @@ class FormState(StatesGroup):
     waiting_for_increase_amount = State()
     waiting_for_decrease_amount = State()
     waiting_for_new_post_name = State()
+    waiting_for_new_post_text = State()
 
 # Global cache for articles and sheets
 articles_cache: Dict[str, Tuple[str, int, bool]] = {}
@@ -1357,20 +1358,66 @@ async def process_spam_config_update(message: Message, state: FSMContext):
     """Process spam bot configuration update"""
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("❌ У вас нет прав для использования этой команды.")
+        await state.clear()
         return
     
     data = await state.get_data()
     setting = data.get('setting')
     
-    if not setting:
-        await state.clear()
-        return
-    
-    try:
-        new_value = int(message.text.strip())
+    if setting:
+        # Handle config update (intervals)
+        try:
+            new_value = int(message.text.strip())
+            
+            if new_value <= 0:
+                await message.answer("❌ Значение должно быть положительным числом.")
+                return
+            
+            # Read current config
+            config_file = "spam_bot/config.json"
+            if os.path.exists(config_file):
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+            else:
+                # Load default config
+                config = {
+                    "groups": [],
+                    "post_interval_seconds": 120,
+                    "cycle_interval_seconds": 3600,
+                    "session_file": "spam_bot/session/userbot",
+                    "log_file": "spam_bot/logs/bot.log",
+                    "log_level": "INFO"
+                }
+            
+            # Update the specific setting
+            if setting == "post_interval":
+                config['post_interval_seconds'] = new_value
+                spam_manager.add_log(f"Post interval changed to {new_value}s by admin")
+                await message.answer(f"✅ Интервал между постами изменен на {new_value} секунд!")
+            elif setting == "cycle_interval":
+                config['cycle_interval_seconds'] = new_value
+                spam_manager.add_log(f"Cycle interval changed to {new_value}s by admin")
+                await message.answer(f"✅ Интервал между циклами изменен на {new_value} секунд!")
+            
+            # Write back to file
+            with open(config_file, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+            
+            await state.clear()
+        except ValueError:
+            await message.answer("❌ Пожалуйста, введите корректное число.")
+    else:
+        # Handle adding channel (wasn't related to configuration)
+        channel_input = message.text.strip()
         
-        if new_value <= 0:
-            await message.answer("❌ Значение должно быть положительным числом.")
+        # Validate channel format
+        if not channel_input:
+            await message.answer("❌ Пожалуйста, введите канал.")
+            return
+        
+        # Check if it's a username (starts with @) or numeric ID (starts with -)
+        if not (channel_input.startswith('@') or (channel_input.lstrip('-').isdigit() and channel_input.count('-') <= 1)):
+            await message.answer("❌ Неверный формат канала. Используйте @username или числовой ID (-1001234567890).")
             return
         
         # Read current config
@@ -1389,23 +1436,31 @@ async def process_spam_config_update(message: Message, state: FSMContext):
                 "log_level": "INFO"
             }
         
-        # Update the specific setting
-        if setting == "post_interval":
-            config['post_interval_seconds'] = new_value
-            spam_manager.add_log(f"Post interval changed to {new_value}s by admin")
-            await message.answer(f"✅ Интервал между постами изменен на {new_value} секунд!")
-        elif setting == "cycle_interval":
-            config['cycle_interval_seconds'] = new_value
-            spam_manager.add_log(f"Cycle interval changed to {new_value}s by admin")
-            await message.answer(f"✅ Интервал между циклами изменен на {new_value} секунд!")
+        # Convert channel_input to proper type (int for numeric, str for username)
+        try:
+            if channel_input.lstrip('-').isdigit():
+                channel_to_add = int(channel_input)
+            else:
+                channel_to_add = channel_input
+        except ValueError:
+            await message.answer("❌ Неверный формат числового ID канала.")
+            return
         
-        # Write back to file
-        with open(config_file, 'w', encoding='utf-8') as f:
-            json.dump(config, f, indent=2, ensure_ascii=False)
+        # Add channel if it's not already in the list
+        if channel_to_add not in config['groups']:
+            config['groups'].append(channel_to_add)
+            
+            # Write back to file
+            with open(config_file, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+            
+            spam_manager.add_log(f"Channel '{channel_to_add}' added by admin")
+            await message.answer(f"✅ Канал '{channel_to_add}' добавлен!")
+        else:
+            await message.answer(f"⚠️ Канал '{channel_to_add}' уже существует в списке!")
         
+        # Clear state
         await state.clear()
-    except ValueError:
-        await message.answer("❌ Пожалуйста, введите корректное число.")
 
 
 @dp.message(FormState.waiting_for_increase_amount)
@@ -1543,16 +1598,26 @@ async def cb_spam_add_channel(query: CallbackQuery, state: FSMContext):
         parse_mode="HTML"
     )
     
-    await state.set_state(FormState.waiting_for_new_sheet_name)  # Reusing existing state
+    await state.set_state(FormState.waiting_for_new_sheet_name)
 
 
 @dp.message(FormState.waiting_for_new_sheet_name)
 async def process_spam_add_channel(message: Message, state: FSMContext):
-    """Process adding a new channel"""
+    """Process adding a new channel or other inputs depending on current state"""
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("❌ У вас нет прав для использования этой команды.")
+        await state.clear()
         return
     
+    # Get current state data to determine what we're adding
+    data = await state.get_data()
+    
+    # If we're in config update state (interval changes), use that handler
+    if 'setting' in data:
+        await process_spam_config_update(message, state)  # This function handles config changes
+        return
+    
+    # Otherwise, treat as adding a channel
     channel_input = message.text.strip()
     
     # Validate channel format
@@ -1799,50 +1864,52 @@ async def cb_spam_edit_post(query: CallbackQuery, state: FSMContext):
     await state.set_state(FormState.waiting_for_product_data)
 
 
-@dp.message(FormState.waiting_for_product_data)
-async def process_spam_post_update(message: Message, state: FSMContext):
-    """Process spam post update"""
+@dp.message(FormState.waiting_for_new_post_text)
+async def process_spam_add_post_text_step2(message: Message, state: FSMContext):
+    """Process new post text step 2"""
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("❌ У вас нет прав для использования этой команды.")
         return
     
     data = await state.get_data()
-    post_name = data.get('editing_post') or data.get('new_post_name')
+    post_name = data.get('new_post_name')
     
-    if post_name:
-        # Update post content
-        post_file = f"spam_bot/texts/{post_name}.txt"
-        os.makedirs(os.path.dirname(post_file), exist_ok=True)
-        
-        with open(post_file, 'w', encoding='utf-8') as f:
-            f.write(message.text)
-        
-        spam_manager.add_log(f"Post '{post_name}' updated by admin")
-        
-        await message.answer(
-            f"✅ Пост '{post_name}' обновлен!\n\n"
-            f"Новый текст:\n{message.text}",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="📝 Редактировать еще", callback_data=f"spam_edit_post_{post_name}")],
-                [InlineKeyboardButton(text="📦 Добавить фото", callback_data=f"spam_add_photo_{post_name}")],
-                [InlineKeyboardButton(text="📰 Управление постами", callback_data="spam_manage_posts")]
-            ])
-        )
-        
+    if not post_name:
+        await message.answer("❌ Ошибка: пост не найден. Попробуйте создать пост заново.")
         await state.clear()
-    else:
-        await state.clear()
+        return
+    
+    # Update post content
+    post_file = f"spam_bot/texts/{post_name}.txt"
+    os.makedirs(os.path.dirname(post_file), exist_ok=True)
+    
+    with open(post_file, 'w', encoding='utf-8') as f:
+        f.write(message.text)
+    
+    spam_manager.add_log(f"Post '{post_name}' text updated by admin")
+    
+    await message.answer(
+        f"✅ Пост '{post_name}' создан и текст сохранен!\n\n"
+        f"Текст:\n{message.text}",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📝 Редактировать пост", callback_data=f"spam_edit_post_{post_name}")],
+            [InlineKeyboardButton(text="📦 Добавить фото", callback_data=f"spam_add_photo_{post_name}")],
+            [InlineKeyboardButton(text="📰 Управление постами", callback_data="spam_manage_posts")]
+        ])
+    )
+    
+    await state.clear()
 
 
 @dp.message(F.photo, FormState.waiting_for_product_data)
 async def process_spam_post_image(message: Message, state: FSMContext):
-    """Process image attachment for post"""
+    """Process image attachment for post (editing existing post)"""
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("❌ У вас нет прав для использования этой команды.")
         return
     
     data = await state.get_data()
-    post_name = data.get('editing_post') or data.get('new_post_name')
+    post_name = data.get('editing_post')
     
     if post_name:
         # Download and save the image
@@ -1871,9 +1938,46 @@ async def process_spam_post_image(message: Message, state: FSMContext):
         await message.answer("❌ Нет активного поста для добавления фото. Сначала создайте или выберите пост.")
 
 
+@dp.message(F.photo, FormState.waiting_for_new_post_text)
+async def process_spam_new_post_image(message: Message, state: FSMContext):
+    """Process image attachment for new post"""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ У вас нет прав для использования этой команды.")
+        return
+    
+    data = await state.get_data()
+    post_name = data.get('new_post_name')
+    
+    if post_name:
+        # Download and save the image
+        # Get the highest quality photo
+        photo = message.photo[-1]  # Last element is the highest quality
+        
+        # Create file with the same name as post
+        file_extension = '.jpg'  # Telegram photos are usually jpg
+        photo_path = f"spam_bot/photos/{post_name}{file_extension}"
+        os.makedirs(os.path.dirname(photo_path), exist_ok=True)
+        
+        # Download the photo
+        await message.bot.download(photo.file_id, photo_path)
+        
+        await message.answer(
+            f"✅ Фото для нового поста '{post_name}' успешно добавлено!\n\n"
+            f"Путь к фото: {photo_path}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📝 Редактировать текст", callback_data=f"spam_edit_post_{post_name}")],
+                [InlineKeyboardButton(text="📰 Управление постами", callback_data="spam_manage_posts")]
+            ])
+        )
+        
+        await state.clear()
+    else:
+        await message.answer("❌ Ошибка: нет активного поста для добавления фото.")
+
+
 @dp.message(F.document, FormState.waiting_for_product_data)
 async def process_spam_post_document(message: Message, state: FSMContext):
-    """Process document image attachment for post"""
+    """Process document image attachment for post (editing existing post)"""
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("❌ У вас нет прав для использования этой команды.")
         return
@@ -1882,7 +1986,7 @@ async def process_spam_post_document(message: Message, state: FSMContext):
     doc = message.document
     if doc.mime_type and doc.mime_type.startswith('image/'):
         data = await state.get_data()
-        post_name = data.get('editing_post') or data.get('new_post_name')
+        post_name = data.get('editing_post')
         
         if post_name:
             # Extract file extension
@@ -1912,41 +2016,82 @@ async def process_spam_post_document(message: Message, state: FSMContext):
         await message.answer("❌ Отправленный файл не является изображением. Пожалуйста, отправьте изображение.")
 
 
-@dp.message(FormState.waiting_for_new_post_name)
-async def process_spam_add_post_name_step1(message: Message, state: FSMContext):
-    """Process new post name step 1"""
+@dp.message(F.document, FormState.waiting_for_new_post_text)
+async def process_spam_new_post_document(message: Message, state: FSMContext):
+    """Process document image attachment for new post"""
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("❌ У вас нет прав для использования этой команды.")
         return
     
-    post_name = message.text.strip()
-    
-    # Validate post name (only alphanumeric and underscore)
-    if not post_name or not post_name.replace('_', '').isalnum():
-        await message.answer("❌ Неверное название поста. Используйте только буквы, цифры и символ подчеркивания.")
+    # Check if document is an image
+    doc = message.document
+    if doc.mime_type and doc.mime_type.startswith('image/'):
+        data = await state.get_data()
+        post_name = data.get('new_post_name')
+        
+        if post_name:
+            # Extract file extension
+            file_extension = os.path.splitext(doc.file_name)[1].lower()
+            if file_extension in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']:
+                photo_path = f"spam_bot/photos/{post_name}{file_extension}"
+                os.makedirs(os.path.dirname(photo_path), exist_ok=True)
+                
+                # Download the photo
+                await message.bot.download(doc.file_id, photo_path)
+                
+                await message.answer(
+                    f"✅ Фото для нового поста '{post_name}' успешно добавлено!\n\n"
+                    f"Путь к фото: {photo_path}",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="📝 Редактировать текст", callback_data=f"spam_edit_post_{post_name}")],
+                        [InlineKeyboardButton(text="📰 Управление постами", callback_data="spam_manage_posts")]
+                    ])
+                )
+                
+                await state.clear()
+            else:
+                await message.answer("❌ Неподдерживаемый формат изображения. Используйте JPG, PNG, GIF, BMP или WEBP.")
+        else:
+            await message.answer("❌ Ошибка: нет активного поста для добавления фото.")
+    else:
+        await message.answer("❌ Отправленный файл не является изображением. Пожалуйста, отправьте изображение.")
+
+
+@dp.message(FormState.waiting_for_new_post_text)
+async def process_spam_add_post_text_step2(message: Message, state: FSMContext):
+    """Process new post text step 2"""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ У вас нет прав для использования этой команды.")
         return
     
-    # Create post file
+    data = await state.get_data()
+    post_name = data.get('new_post_name')
+    
+    if not post_name:
+        await message.answer("❌ Ошибка: пост не найден. Попробуйте создать пост заново.")
+        await state.clear()
+        return
+    
+    # Update post content
     post_file = f"spam_bot/texts/{post_name}.txt"
     os.makedirs(os.path.dirname(post_file), exist_ok=True)
     
     with open(post_file, 'w', encoding='utf-8') as f:
-        f.write("")  # Empty post content initially
+        f.write(message.text)
     
-    spam_manager.add_log(f"Post '{post_name}' created by admin")
+    spam_manager.add_log(f"Post '{post_name}' text updated by admin")
     
     await message.answer(
-        f"✅ Пост '{post_name}' создан!\n\n"
-        "Теперь отправьте текст для этого поста:",
+        f"✅ Пост '{post_name}' создан и текст сохранен!\n\n"
+        f"Текст:\n{message.text}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="spam_manage_posts")]
+            [InlineKeyboardButton(text="📝 Редактировать пост", callback_data=f"spam_edit_post_{post_name}")],
+            [InlineKeyboardButton(text="📦 Добавить фото", callback_data=f"spam_add_photo_{post_name}")],
+            [InlineKeyboardButton(text="📰 Управление постами", callback_data="spam_manage_posts")]
         ])
     )
     
-    # Store post name for next step
-    await state.update_data(new_post_name=post_name)
-    # Update state to wait for post text
-    await state.set_state(FormState.waiting_for_product_data)
+    await state.clear()
 
 
 @dp.callback_query(F.data == "spam_add_post")
