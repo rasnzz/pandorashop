@@ -452,11 +452,12 @@ async def cmd_spam_shortcut(message: Message):
     ]
     
     await message.answer(
-        f" {/*/spam_panel - Панель управления спам-ботом /*/\n\n"
+        "<b>📢 Панель управления спам-ботом</b>\n\n"
         f"Статус: {status}\n"
         f"Активных постов: {active_posts}\n"
         f"Последние события: {len(spam_manager.logs)}",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+        parse_mode="HTML"
     )
 
 @dp.callback_query(F.data == "main_menu")
@@ -1114,11 +1115,12 @@ async def cmd_spam_panel(message: Message):
     ]
     
     await message.answer(
-        f" {/*/spam_panel - Панель управления спам-ботом /*/\n\n"
+        "<b>📢 Панель управления спам-ботом</b>\n\n"
         f"Статус: {status}\n"
         f"Активных постов: {active_posts}\n"
         f"Последние события: {len(spam_manager.logs)}",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+        parse_mode="HTML"
     )
 
 
@@ -1143,11 +1145,12 @@ async def cb_spam_panel(query: CallbackQuery):
     ]
     
     await query.message.edit_text(
-        f" {/*/spam_panel - Панель управления спам-ботом /*/\n\n"
+        "<b>📢 Панель управления спам-ботом</b>\n\n"
         f"Статус: {status}\n"
         f"Активных постов: {active_posts}\n"
         f"Последние события: {len(spam_manager.logs)}",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+        parse_mode="HTML"
     )
 
 
@@ -1208,8 +1211,9 @@ async def cb_spam_logs(query: CallbackQuery):
     ]
     
     await query.message.edit_text(
-        f" {/*/spam_logs - Последние события /*/\n\n{logs_text}",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+        "<b>📜 Последние события</b>\n\n" + logs_text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+        parse_mode="HTML"
     )
 
 
@@ -1253,13 +1257,14 @@ async def cb_spam_stats(query: CallbackQuery):
     ]
     
     await query.message.edit_text(
-        f" {/*/spam_stats - Статистика спам-бота /*/\n\n"
+        "<b>📊 Статистика спам-бота</b>\n\n"
         f"Статус: {status}\n"
         f"Активных постов: {active_posts}\n"
         f"Каналов для рассылки: {channel_count}\n"
         f"Всего событий в логах: {total_logs}\n"
         f"Последнее событие: {spam_manager.logs[-1] if spam_manager.logs else 'Нет событий'}",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+        parse_mode="HTML"
     )
 
 
@@ -1293,7 +1298,7 @@ async def cb_spam_config(query: CallbackQuery):
     ]
     
     await query.message.edit_text(
-        f" {/*/spam_config - Настройки спам-бота /*/\n\n"
+        "<b>⚙️ Настройки спам-бота</b>\n\n"
         f"<b>Текущие настройки:</b>\n"
         f"• Интервал между постами: {config.get('post_interval_seconds', 120)} секунд\n"
         f"• Интервал между циклами: {config.get('cycle_interval_seconds', 3600)} секунд\n"
@@ -1312,7 +1317,7 @@ async def cb_spam_change_post_interval(query: CallbackQuery, state: FSMContext):
         return
     
     await query.message.edit_text(
-        f" {/*/change_post_interval - Изменить интервал между постами /*/\n\n"
+        "<b>🕐 Изменить интервал между постами</b>\n\n"
         f"Введите новый интервал между постами в <b>секундах</b>.\n\n"
         f"Например, 120 для 2 минут:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -1333,7 +1338,7 @@ async def cb_spam_change_cycle_interval(query: CallbackQuery, state: FSMContext)
         return
     
     await query.message.edit_text(
-        f" {/*/change_cycle_interval - Изменить интервал между циклами /*/\n\n"
+        "<b>⏱️ Изменить интервал между циклами</b>\n\n"
         f"Введите новый интервал между циклами в <b>секундах</b>.\n\n"
         f"Например, 3600 для 1 часа:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -1434,10 +1439,11 @@ async def cb_spam_manage_posts(query: CallbackQuery):
     keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="spam_panel")])
     
     await query.message.edit_text(
-        f" {/*/spam_manage_posts - Управление постами /*/\n\n"
+        "<b>📝 Управление постами</b>\n\n"
         f"Доступные посты: {len(posts)}\n\n"
         f"Для редактирования нажмите на пост",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+        parse_mode="HTML"
     )
 
 
@@ -1470,10 +1476,11 @@ async def cb_spam_manage_channels(query: CallbackQuery):
     keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="spam_manage_posts")])
     
     await query.message.edit_text(
-        f" {/*/spam_manage_channels - Управление каналами /*/\n\n"
+        "<b>📡 Управление каналами</b>\n\n"
         f"Каналы для рассылки: {len(channels)}\n\n"
         f"Текущие каналы:\n" + ("\n".join([f"- {ch}" for ch in channels]) if channels else "- Нет каналов"),
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+        parse_mode="HTML"
     )
 
 
@@ -1485,14 +1492,15 @@ async def cb_spam_add_channel(query: CallbackQuery, state: FSMContext):
         return
     
     await query.message.edit_text(
-        f" {/*/add_channel - Добавить канал /*/\n\n"
+        "<b>➕ Добавить канал</b>\n\n"
         f"Введите канал для добавления в формате:\n"
         f"- @channel_name (для публичного канала)\n"
         f"- -1001234567890 (для приватного канала/группы)\n\n"
         f"Пример: @my_public_channel или -1001234567890",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="spam_manage_channels")]
-        ])
+        ]),
+        parse_mode="HTML"
     )
     
     await state.set_state(FormState.waiting_for_new_sheet_name)  # Reusing existing state
@@ -1579,9 +1587,10 @@ async def cb_spam_delete_channel_list(query: CallbackQuery):
     keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="spam_manage_channels")])
     
     await query.message.edit_text(
-        f" {/*/delete_channel_list - Выберите канал для удаления /*/\n\n"
+        "<b>🗑️ Выберите канал для удаления</b>\n\n"
         f"Выберите канал, который хотите удалить:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+        parse_mode="HTML"
     )
 
 
@@ -1659,12 +1668,13 @@ async def cb_spam_edit_post(query: CallbackQuery, state: FSMContext):
             content = f.read()
     
     await query.message.edit_text(
-        f" {/*/edit_post {post_name} - Редактирование поста /*/\n\n"
+        f"<b>📝 Редактирование поста {post_name}</b>\n\n"
         f"Текущий текст поста '{post_name}':\n{content if content else 'Пусто'}\n\n"
         f"Отправьте новый текст для поста:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="spam_manage_posts")]
-        ])
+        ]),
+        parse_mode="HTML"
     )
     
     await state.update_data(editing_post=post_name)
