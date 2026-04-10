@@ -1,0 +1,3 @@
+@my_channel1
+@my_channel2
+-1001234567890
