@@ -155,6 +155,27 @@ async def send_with_retry(client, group, text, photo_path, max_retries=3):
     return False
 
 
+async def get_channels_from_file():
+    """Read channels from channels.txt file"""
+    channels_file = "channels.txt"
+    channels = []
+    if os.path.exists(channels_file):
+        with open(channels_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line:  # Skip empty lines
+                    # Try to convert to int if it's a numeric ID
+                    try:
+                        if line.lstrip('-').isdigit():
+                            channels.append(int(line))
+                        else:
+                            channels.append(line)
+                    except ValueError:
+                        # If conversion fails, add as string
+                        channels.append(line)
+    return channels
+
+
 async def main():
     """Main function that runs the bot"""
     # Load configuration
@@ -182,7 +203,14 @@ async def main():
                 log_event("No posts found in texts/ directory. Exiting...")
                 break
             
+            # Get channels from file instead of config
+            channels = await get_channels_from_file()
+            if not channels:
+                log_event("No channels found in channels.txt. Using config channels.")
+                channels = config['groups']
+            
             log_event(f"Detected {len(available_posts)} available posts: {available_posts}")
+            log_event(f"Loaded {len(channels)} channels from file")
             log_event("Starting new cycle of posts...")
             
             # Loop through each available post
@@ -191,10 +219,10 @@ async def main():
                 
                 log_event(f"Starting distribution of post '{key}'")
                 
-                # Send to each group
-                for group in config['groups']:
-                    log_event(f"Sending post '{key}' to {group}...")
-                    await send_with_retry(client, group, text, photo)
+                # Send to each channel
+                for channel in channels:
+                    log_event(f"Sending post '{key}' to {channel}...")
+                    await send_with_retry(client, channel, text, photo)
                 
                 log_event(f"Post '{key}' distributed to all channels. Waiting {config['post_interval_seconds']} seconds...")
                 
