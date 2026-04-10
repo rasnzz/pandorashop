@@ -1907,7 +1907,8 @@ async def process_spam_add_post_name_step1(message: Message, state: FSMContext):
 
     # Store post name for next step
     await state.update_data(new_post_name=post_name)
-    # Next step will be handled in a separate handler waiting for text
+    # Update state to wait for post text
+    await state.set_state(FormState.waiting_for_new_post_text)
 
 
 @dp.callback_query(F.data.startswith("spam_edit_post_"))
