@@ -1,8 +1,4 @@
 {
-  "groups": [
-    "@my_channel1",
-    "@my_channel2",
-  ],
   "post_interval_seconds": 120,
   "cycle_interval_seconds": 3600,
   "session_file": "spam_bot/session/userbot",
