@@ -2624,6 +2624,37 @@ async def handle_photo_upload(message: Message):
         await message.answer("❌ Произошла ошибка при загрузке фото. Попробуйте позже.")
 
 
+@dp.callback_query(F.data.startswith("spam_add_photo_"))
+async def cb_spam_add_photo(query: CallbackQuery):
+    """Prompt to add photo for post"""
+    try:
+        if query.from_user.id not in ADMIN_IDS:
+            await query.answer("❌ У вас нет прав для использования этой команды.", show_alert=True)
+            return
+        
+        # Extract post name from callback data: "spam_add_photo_{post_name}"
+        post_name = query.data[len("spam_add_photo_"):].strip()
+        
+        await query.message.edit_text(
+            f"<b>📦 Добавить фото к посту '{post_name}'</b>\n\n"
+            f"Теперь вы можете отправить фото прямо в этот чат, и оно будет автоматически сохранено как '{post_name}.jpg' в папке 'spam_bot/photos/'.\n\n"
+            f"Поддерживаемые форматы: .jpg, .jpeg, .png\n\n"
+            f"Отправьте фото, которое хотите использовать для поста '{post_name}':",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📝 Редактировать пост", callback_data=f"spam_edit_post_{post_name}")],
+                [InlineKeyboardButton(text="📰 Управление постами", callback_data="spam_manage_posts")],
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="spam_manage_posts")]
+            ]),
+            parse_mode="HTML"
+        )
+        
+        # Set state to wait for photo upload
+        spam_manager.photo_upload_states[query.from_user.id] = post_name
+    except Exception as e:
+        logging.error(f"Error in cb_spam_add_photo: {e}")
+        await query.answer("❌ Произошла ошибка. Попробуйте позже.", show_alert=True)
+
+
 @dp.message(F.document)
 async def handle_document_upload(message: Message):
     """Handle document uploads (for images)"""
