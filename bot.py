@@ -34,6 +34,7 @@ class FormState(StatesGroup):
     waiting_for_product_data = State()
     waiting_for_increase_amount = State()
     waiting_for_decrease_amount = State()
+    waiting_for_new_post_name = State()
 
 # Global cache for articles and sheets
 articles_cache: Dict[str, Tuple[str, int, bool]] = {}
@@ -1383,8 +1384,8 @@ async def process_spam_config_update(message: Message, state: FSMContext):
                 "groups": [],
                 "post_interval_seconds": 120,
                 "cycle_interval_seconds": 3600,
-                "session_file": "session/userbot",
-                "log_file": "logs/bot.log",
+                "session_file": "spam_bot/session/userbot",
+                "log_file": "spam_bot/logs/bot.log",
                 "log_level": "INFO"
             }
         
@@ -1405,6 +1406,41 @@ async def process_spam_config_update(message: Message, state: FSMContext):
         await state.clear()
     except ValueError:
         await message.answer("❌ Пожалуйста, введите корректное число.")
+
+
+@dp.message(FormState.waiting_for_increase_amount)
+async def process_spam_add_post_step2(message: Message, state: FSMContext):
+    """Process new post text"""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ У вас нет прав для использования этой команды.")
+        return
+    
+    data = await state.get_data()
+    if 'new_post_name' in data:
+        post_name = data['new_post_name']
+        
+        # Update post content
+        post_file = f"spam_bot/texts/{post_name}.txt"
+        os.makedirs(os.path.dirname(post_file), exist_ok=True)
+        
+        with open(post_file, 'w', encoding='utf-8') as f:
+            f.write(message.text)
+        
+        spam_manager.add_log(f"Post '{post_name}' text updated by admin")
+        
+        await message.answer(
+            f"✅ Пост '{post_name}' создан и обновлен!\n\n"
+            f"Текст:\n{message.text}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📝 Редактировать", callback_data=f"spam_edit_post_{post_name}")],
+                [InlineKeyboardButton(text="📦 Добавить фото", callback_data=f"spam_add_photo_{post_name}")],
+                [InlineKeyboardButton(text="📰 Управление постами", callback_data="spam_manage_posts")]
+            ])
+        )
+        
+        await state.clear()
+    else:
+        await state.clear()
 
 
 @dp.callback_query(F.data == "spam_manage_posts")
@@ -1714,6 +1750,164 @@ async def process_spam_post_update(message: Message, state: FSMContext):
         await state.clear()
     else:
         await state.clear()
+
+
+@dp.callback_query(F.data == "spam_add_post")
+async def cb_spam_add_post(query: CallbackQuery, state: FSMContext):
+    """Prompt to add a new post"""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("❌ У вас нет прав для использования этой команды.", show_alert=True)
+        return
+    
+    await query.message.edit_text(
+        "<b>📝 Добавить новый пост</b>\n\n"
+        "Введите название нового поста (латиницей, без пробелов и специальных символов):\n\n"
+        "Например: 'post1', 'announcement', 'news'",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="spam_manage_posts")]
+        ]),
+        parse_mode="HTML"
+    )
+    
+    await state.set_state(FormState.waiting_for_increase_amount)
+
+
+@dp.message(FormState.waiting_for_increase_amount)
+async def process_spam_add_post_name(message: Message, state: FSMContext):
+    """Process new post name"""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ У вас нет прав для использования этой команды.")
+        return
+    
+    post_name = message.text.strip()
+    
+    # Validate post name (only alphanumeric and underscore)
+    if not post_name or not post_name.replace('_', '').isalnum():
+        await message.answer("❌ Неверное название поста. Используйте только буквы, цифры и символ подчеркивания.")
+        return
+    
+    # Create post file
+    post_file = f"spam_bot/texts/{post_name}.txt"
+    os.makedirs(os.path.dirname(post_file), exist_ok=True)
+    
+    with open(post_file, 'w', encoding='utf-8') as f:
+        f.write("")  # Empty post content initially
+    
+    spam_manager.add_log(f"Post '{post_name}' created by admin")
+    
+    await message.answer(
+        f"✅ Пост '{post_name}' создан!\n\n"
+        "Теперь отправьте текст для этого поста:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="spam_manage_posts")]
+        ])
+    )
+    
+    # Store post name for next step
+    await state.update_data(new_post_name=post_name)
+    # We'll continue with text input in a separate handler
+    # For now just clear state
+    await state.clear()
+
+
+@dp.callback_query(F.data.startswith("spam_add_photo_"))
+async def cb_spam_add_photo(query: CallbackQuery):
+    """Prompt to add photo for post"""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("❌ У вас нет прав для использования этой команды.", show_alert=True)
+        return
+    
+    post_name = query.data.split("_")[3]  # Extract post name from callback data
+    
+    await query.message.edit_text(
+        f"<b>📦 Добавить фото к посту '{post_name}'</b>\n\n"
+        f"Для добавления фото к посту '{post_name}', поместите файл '{post_name}.jpg' (или .png, .jpeg) в папку 'spam_bot/photos/' на сервере.\n\n"
+        f"Поддерживаемые форматы: .jpg, .jpeg, .png",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📝 Редактировать пост", callback_data=f"spam_edit_post_{post_name}")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="spam_manage_posts")]
+        ]),
+        parse_mode="HTML"
+    )
+
+
+@dp.callback_query(F.data == "spam_delete_post_list")
+async def cb_spam_delete_post_list(query: CallbackQuery):
+    """Show list of posts to delete"""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("❌ У вас нет прав для использования этой команды.", show_alert=True)
+        return
+    
+    # List available posts
+    texts_dir = "spam_bot/texts"
+    if os.path.exists(texts_dir):
+        posts = [f for f in os.listdir(texts_dir) if f.endswith('.txt')]
+    else:
+        posts = []
+    
+    if not posts:
+        await query.answer("❌ Нет постов для удаления!", show_alert=True)
+        return
+    
+    keyboard = []
+    
+    # Show current posts with delete option
+    for post in posts:
+        post_name = post[:-4]  # Remove .txt extension
+        keyboard.append([InlineKeyboardButton(text=f"🗑️ Удалить {post_name}", callback_data=f"spam_confirm_delete_post_{post_name}")])
+    
+    keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="spam_manage_posts")])
+    
+    await query.message.edit_text(
+        "<b>🗑️ Выберите пост для удаления</b>\n\n"
+        "Выберите пост, который хотите удалить:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+        parse_mode="HTML"
+    )
+
+
+@dp.callback_query(F.data.startswith("spam_confirm_delete_post_"))
+async def cb_spam_confirm_delete_post(query: CallbackQuery):
+    """Confirm post deletion"""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("❌ У вас нет прав для использования этой команды.", show_alert=True)
+        return
+    
+    post_name = query.data.replace("spam_confirm_delete_post_", "")
+    
+    # Create confirmation buttons
+    keyboard = [
+        [InlineKeyboardButton(text="❌ Да, удалить", callback_data=f"spam_do_delete_post_{post_name}")],
+        [InlineKeyboardButton(text="✅ Нет, отмена", callback_data="spam_manage_posts")]
+    ]
+    
+    await query.message.edit_text(
+        f" ⚠️ <b>Вы уверены, что хотите удалить пост '{post_name}'?</b>\n\n"
+        f"Это действие нельзя будет отменить, и файл поста будет удален.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+        parse_mode="HTML"
+    )
+
+
+@dp.callback_query(F.data.startswith("spam_do_delete_post_"))
+async def cb_spam_do_delete_post(query: CallbackQuery):
+    """Actually delete the post"""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("❌ У вас нет прав для использования этой команды.", show_alert=True)
+        return
+    
+    post_name = query.data.replace("spam_do_delete_post_", "")
+    post_file = f"spam_bot/texts/{post_name}.txt"
+    
+    if os.path.exists(post_file):
+        os.remove(post_file)
+        spam_manager.add_log(f"Post '{post_name}' deleted by admin")
+        await query.answer(f"✅ Пост '{post_name}' удален!")
+    else:
+        await query.answer("❌ Пост уже удален или не существует!", show_alert=True)
+    
+    # Go back to post management
+    await cb_spam_manage_posts(query)
 
 
 async def run_spam_bot():
