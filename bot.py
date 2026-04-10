@@ -1687,6 +1687,65 @@ async def cb_spam_do_delete_channel(query: CallbackQuery):
     await cb_spam_manage_channels(query)
 
 
+@dp.callback_query(F.data.startswith("spam_channel_action_"))
+async def cb_spam_channel_action(query: CallbackQuery):
+    """Action on a specific channel"""
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("❌ У вас нет прав для использования этой команды.", show_alert=True)
+        return
+    
+    channel = query.data.replace("spam_channel_action_", "")
+    
+    keyboard = [
+        [InlineKeyboardButton(text="🗑️ Удалить канал", callback_data=f"spam_confirm_delete_channel_{channel}")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="spam_manage_channels")]
+    ]
+    
+    await query.message.edit_text(
+        "<b>📡 Действия с каналом</b>\n\n"
+        f"Выбранный канал: {channel}\n\n"
+        f"Выберите действие:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+        parse_mode="HTML"
+    )
+
+
+@dp.message(FormState.waiting_for_new_post_name)
+async def process_spam_add_post_name_step1(message: Message, state: FSMContext):
+    """Process new post name step 1"""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ У вас нет прав для использования этой команды.")
+        return
+    
+    post_name = message.text.strip()
+    
+    # Validate post name (only alphanumeric and underscore)
+    if not post_name or not post_name.replace('_', '').isalnum():
+        await message.answer("❌ Неверное название поста. Используйте только буквы, цифры и символ подчеркивания.")
+        return
+    
+    # Create post file
+    post_file = f"spam_bot/texts/{post_name}.txt"
+    os.makedirs(os.path.dirname(post_file), exist_ok=True)
+    
+    with open(post_file, 'w', encoding='utf-8') as f:
+        f.write("")  # Empty post content initially
+    
+    spam_manager.add_log(f"Post '{post_name}' created by admin")
+    
+    await message.answer(
+        f"✅ Пост '{post_name}' создан!\n\n"
+        "Теперь отправьте текст для этого поста:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="spam_manage_posts")]
+        ])
+    )
+    
+    # Store post name for next step
+    await state.update_data(new_post_name=post_name)
+    # Next step will be handled in a separate handler waiting for text
+
+
 @dp.callback_query(F.data.startswith("spam_edit_post_"))
 async def cb_spam_edit_post(query: CallbackQuery, state: FSMContext):
     """Edit a specific spam post"""
@@ -1725,9 +1784,9 @@ async def process_spam_post_update(message: Message, state: FSMContext):
         return
     
     data = await state.get_data()
-    if 'editing_post' in data:
-        post_name = data['editing_post']
-        
+    post_name = data.get('editing_post') or data.get('new_post_name')
+    
+    if post_name:
         # Update post content
         post_file = f"spam_bot/texts/{post_name}.txt"
         os.makedirs(os.path.dirname(post_file), exist_ok=True)
