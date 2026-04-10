@@ -1502,7 +1502,11 @@ async def cb_spam_manage_channels(query: CallbackQuery):
     
     # Show current channels
     for channel in channels:
-        keyboard.append([InlineKeyboardButton(text=f"📡 {str(channel)}", callback_data=f"spam_channel_action_{channel}")])
+        # Convert channel to string and encode special characters for callback data
+        channel_str = str(channel)
+        # Replace problematic characters for callback data
+        safe_channel = channel_str.replace("-", "_minus_").replace("@", "_at_")
+        keyboard.append([InlineKeyboardButton(text=f"📡 {str(channel)}", callback_data=f"spam_channel_action_{safe_channel}")])
     
     # Add channel management buttons
     keyboard.append([InlineKeyboardButton(text="➕ Добавить канал", callback_data="spam_add_channel")])
@@ -1557,8 +1561,8 @@ async def process_spam_add_channel(message: Message, state: FSMContext):
         return
     
     # Check if it's a username (starts with @) or numeric ID (starts with -)
-    if not (channel_input.startswith('@') or channel_input.lstrip('-').isdigit()):
-        await message.answer("❌ Неверный формат канала. Используйте @username или числовой ID.")
+    if not (channel_input.startswith('@') or (channel_input.lstrip('-').isdigit() and channel_input.count('-') <= 1)):
+        await message.answer("❌ Неверный формат канала. Используйте @username или числовой ID (-1001234567890).")
         return
     
     # Read current config
@@ -1570,26 +1574,35 @@ async def process_spam_add_channel(message: Message, state: FSMContext):
         # Load default config
         config = {
             "groups": [],
-            "post_keys": ["a", "b", "c", "d"],
             "post_interval_seconds": 120,
             "cycle_interval_seconds": 3600,
-            "session_file": "session/userbot",
-            "log_file": "logs/bot.log",
+            "session_file": "spam_bot/session/userbot",
+            "log_file": "spam_bot/logs/bot.log",
             "log_level": "INFO"
         }
     
+    # Convert channel_input to proper type (int for numeric, str for username)
+    try:
+        if channel_input.lstrip('-').isdigit():
+            channel_to_add = int(channel_input)
+        else:
+            channel_to_add = channel_input
+    except ValueError:
+        await message.answer("❌ Неверный формат числового ID канала.")
+        return
+    
     # Add channel if it's not already in the list
-    if channel_input not in config['groups']:
-        config['groups'].append(channel_input)
+    if channel_to_add not in config['groups']:
+        config['groups'].append(channel_to_add)
         
         # Write back to file
         with open(config_file, 'w', encoding='utf-8') as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
         
-        spam_manager.add_log(f"Channel '{channel_input}' added by admin")
-        await message.answer(f"✅ Канал '{channel_input}' добавлен!")
+        spam_manager.add_log(f"Channel '{channel_to_add}' added by admin")
+        await message.answer(f"✅ Канал '{channel_to_add}' добавлен!")
     else:
-        await message.answer(f"⚠️ Канал '{channel_input}' уже существует в списке!")
+        await message.answer(f"⚠️ Канал '{channel_to_add}' уже существует в списке!")
     
     # Clear state
     await state.clear()
@@ -1618,7 +1631,10 @@ async def cb_spam_delete_channel_list(query: CallbackQuery):
     
     # Show current channels with delete option
     for channel in channels:
-        keyboard.append([InlineKeyboardButton(text=f"🗑️ Удалить {str(channel)}", callback_data=f"spam_confirm_delete_channel_{channel}")])
+        # Encode channel name for callback data
+        channel_str = str(channel)
+        safe_channel = channel_str.replace("-", "_minus_").replace("@", "_at_")
+        keyboard.append([InlineKeyboardButton(text=f"🗑️ Удалить {str(channel)}", callback_data=f"spam_confirm_delete_channel_{safe_channel}")])
     
     keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="spam_manage_channels")])
     
@@ -1637,16 +1653,18 @@ async def cb_spam_confirm_delete_channel(query: CallbackQuery):
         await query.answer("❌ У вас нет прав для использования этой команды.", show_alert=True)
         return
     
-    channel_to_delete = query.data.replace("spam_confirm_delete_channel_", "")
+    # Decode the safe channel name back to original
+    encoded_channel = query.data.replace("spam_confirm_delete_channel_", "")
+    original_channel = encoded_channel.replace("_minus_", "-").replace("_at_", "@")
     
     # Create confirmation buttons
     keyboard = [
-        [InlineKeyboardButton(text="❌ Да, удалить", callback_data=f"spam_do_delete_channel_{channel_to_delete}")],
+        [InlineKeyboardButton(text="❌ Да, удалить", callback_data=f"spam_do_delete_channel_{encoded_channel}")],
         [InlineKeyboardButton(text="✅ Нет, отмена", callback_data="spam_manage_channels")]
     ]
     
     await query.message.edit_text(
-        f" ⚠️ <b>Вы уверены, что хотите удалить канал '{channel_to_delete}'?</b>\n\n"
+        f" ⚠️ <b>Вы уверены, что хотите удалить канал '{original_channel}'?</b>\n\n"
         f"Это действие нельзя будет отменить.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
         parse_mode="HTML"
@@ -1660,7 +1678,9 @@ async def cb_spam_do_delete_channel(query: CallbackQuery):
         await query.answer("❌ У вас нет прав для использования этой команды.", show_alert=True)
         return
     
-    channel_to_delete = query.data.replace("spam_do_delete_channel_", "")
+    # Decode the safe channel name back to original
+    encoded_channel = query.data.replace("spam_do_delete_channel_", "")
+    original_channel = encoded_channel.replace("_minus_", "-").replace("_at_", "@")
     
     # Read current config
     config_file = "spam_bot/config.json"
@@ -1669,15 +1689,15 @@ async def cb_spam_do_delete_channel(query: CallbackQuery):
             config = json.load(f)
         
         # Remove channel if it exists
-        if channel_to_delete in config['groups']:
-            config['groups'].remove(channel_to_delete)
+        if original_channel in config['groups']:
+            config['groups'].remove(original_channel)
             
             # Write back to file
             with open(config_file, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=2, ensure_ascii=False)
             
-            spam_manager.add_log(f"Channel '{channel_to_delete}' deleted by admin")
-            await query.answer(f"✅ Канал '{channel_to_delete}' удален!")
+            spam_manager.add_log(f"Channel '{original_channel}' deleted by admin")
+            await query.answer(f"✅ Канал '{original_channel}' удален!")
         else:
             await query.answer("❌ Канал уже удален или не существует!", show_alert=True)
     else:
@@ -1694,16 +1714,19 @@ async def cb_spam_channel_action(query: CallbackQuery):
         await query.answer("❌ У вас нет прав для использования этой команды.", show_alert=True)
         return
     
-    channel = query.data.replace("spam_channel_action_", "")
+    # Decode the safe channel name back to original
+    encoded_channel = query.data.replace("spam_channel_action_", "")
+    # Reverse the encoding to get the original channel name
+    original_channel = encoded_channel.replace("_minus_", "-").replace("_at_", "@")
     
     keyboard = [
-        [InlineKeyboardButton(text="🗑️ Удалить канал", callback_data=f"spam_confirm_delete_channel_{channel}")],
+        [InlineKeyboardButton(text="🗑️ Удалить канал", callback_data=f"spam_confirm_delete_channel_{encoded_channel}")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="spam_manage_channels")]
     ]
     
     await query.message.edit_text(
         "<b>📡 Действия с каналом</b>\n\n"
-        f"Выбранный канал: {channel}\n\n"
+        f"Выбранный канал: {original_channel}\n\n"
         f"Выберите действие:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
         parse_mode="HTML"
@@ -1811,6 +1834,121 @@ async def process_spam_post_update(message: Message, state: FSMContext):
         await state.clear()
 
 
+@dp.message(F.photo, FormState.waiting_for_product_data)
+async def process_spam_post_image(message: Message, state: FSMContext):
+    """Process image attachment for post"""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ У вас нет прав для использования этой команды.")
+        return
+    
+    data = await state.get_data()
+    post_name = data.get('editing_post') or data.get('new_post_name')
+    
+    if post_name:
+        # Download and save the image
+        # Get the highest quality photo
+        photo = message.photo[-1]  # Last element is the highest quality
+        
+        # Create file with the same name as post
+        file_extension = '.jpg'  # Telegram photos are usually jpg
+        photo_path = f"spam_bot/photos/{post_name}{file_extension}"
+        os.makedirs(os.path.dirname(photo_path), exist_ok=True)
+        
+        # Download the photo
+        await message.bot.download(photo.file_id, photo_path)
+        
+        await message.answer(
+            f"✅ Фото для поста '{post_name}' успешно добавлено!\n\n"
+            f"Путь к фото: {photo_path}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📝 Редактировать текст", callback_data=f"spam_edit_post_{post_name}")],
+                [InlineKeyboardButton(text="📰 Управление постами", callback_data="spam_manage_posts")]
+            ])
+        )
+        
+        await state.clear()
+    else:
+        await message.answer("❌ Нет активного поста для добавления фото. Сначала создайте или выберите пост.")
+
+
+@dp.message(F.document, FormState.waiting_for_product_data)
+async def process_spam_post_document(message: Message, state: FSMContext):
+    """Process document image attachment for post"""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ У вас нет прав для использования этой команды.")
+        return
+    
+    # Check if document is an image
+    doc = message.document
+    if doc.mime_type and doc.mime_type.startswith('image/'):
+        data = await state.get_data()
+        post_name = data.get('editing_post') or data.get('new_post_name')
+        
+        if post_name:
+            # Extract file extension
+            file_extension = os.path.splitext(doc.file_name)[1].lower()
+            if file_extension in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']:
+                photo_path = f"spam_bot/photos/{post_name}{file_extension}"
+                os.makedirs(os.path.dirname(photo_path), exist_ok=True)
+                
+                # Download the photo
+                await message.bot.download(doc.file_id, photo_path)
+                
+                await message.answer(
+                    f"✅ Фото для поста '{post_name}' успешно добавлено!\n\n"
+                    f"Путь к фото: {photo_path}",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="📝 Редактировать текст", callback_data=f"spam_edit_post_{post_name}")],
+                        [InlineKeyboardButton(text="📰 Управление постами", callback_data="spam_manage_posts")]
+                    ])
+                )
+                
+                await state.clear()
+            else:
+                await message.answer("❌ Неподдерживаемый формат изображения. Используйте JPG, PNG, GIF, BMP или WEBP.")
+        else:
+            await message.answer("❌ Нет активного поста для добавления фото. Сначала создайте или выберите пост.")
+    else:
+        await message.answer("❌ Отправленный файл не является изображением. Пожалуйста, отправьте изображение.")
+
+
+@dp.message(FormState.waiting_for_new_post_name)
+async def process_spam_add_post_name_step1(message: Message, state: FSMContext):
+    """Process new post name step 1"""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ У вас нет прав для использования этой команды.")
+        return
+    
+    post_name = message.text.strip()
+    
+    # Validate post name (only alphanumeric and underscore)
+    if not post_name or not post_name.replace('_', '').isalnum():
+        await message.answer("❌ Неверное название поста. Используйте только буквы, цифры и символ подчеркивания.")
+        return
+    
+    # Create post file
+    post_file = f"spam_bot/texts/{post_name}.txt"
+    os.makedirs(os.path.dirname(post_file), exist_ok=True)
+    
+    with open(post_file, 'w', encoding='utf-8') as f:
+        f.write("")  # Empty post content initially
+    
+    spam_manager.add_log(f"Post '{post_name}' created by admin")
+    
+    await message.answer(
+        f"✅ Пост '{post_name}' создан!\n\n"
+        "Теперь отправьте текст для этого поста:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="spam_manage_posts")]
+        ])
+    )
+    
+    # Store post name for next step
+    await state.update_data(new_post_name=post_name)
+    # Update state to wait for post text
+    await state.set_state(FormState.waiting_for_product_data)
+
+
 @dp.callback_query(F.data == "spam_add_post")
 async def cb_spam_add_post(query: CallbackQuery, state: FSMContext):
     """Prompt to add a new post"""
@@ -1828,7 +1966,7 @@ async def cb_spam_add_post(query: CallbackQuery, state: FSMContext):
         parse_mode="HTML"
     )
     
-    await state.set_state(FormState.waiting_for_increase_amount)
+    await state.set_state(FormState.waiting_for_new_post_name)
 
 
 @dp.message(FormState.waiting_for_increase_amount)
@@ -1880,10 +2018,12 @@ async def cb_spam_add_photo(query: CallbackQuery):
     
     await query.message.edit_text(
         f"<b>📦 Добавить фото к посту '{post_name}'</b>\n\n"
-        f"Для добавления фото к посту '{post_name}', поместите файл '{post_name}.jpg' (или .png, .jpeg) в папку 'spam_bot/photos/' на сервере.\n\n"
-        f"Поддерживаемые форматы: .jpg, .jpeg, .png",
+        f"Фото для поста '{post_name}' должно иметь название '{post_name}.jpg' (или .png, .jpeg) и находиться в папке 'spam_bot/photos/'.\n\n"
+        f"Поддерживаемые форматы: .jpg, .jpeg, .png\n\n"
+        f"Для добавления фото загрузите файл в папку на сервере или используйте систему загрузки (разработка).",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📝 Редактировать пост", callback_data=f"spam_edit_post_{post_name}")],
+            [InlineKeyboardButton(text="📰 Управление постами", callback_data="spam_manage_posts")],
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="spam_manage_posts")]
         ]),
         parse_mode="HTML"
