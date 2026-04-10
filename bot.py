@@ -1133,6 +1133,7 @@ class SpamBotManager:
         self.is_running = False
         self.logs = []
         self.current_post_index = 0
+        self.photo_upload_states = {}  # Track photo upload for specific user-post pairs
 
     def add_log(self, message):
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -1146,6 +1147,19 @@ class SpamBotManager:
 
     def clear_logs(self):
         self.logs.clear()
+
+    async def set_photo_upload_state(self, user_id, post_name):
+        """Set state to wait for photo upload for specific post"""
+        self.photo_upload_states[user_id] = post_name
+
+    async def get_photo_upload_state(self, user_id):
+        """Get current post name for photo upload"""
+        return self.photo_upload_states.get(user_id)
+
+    async def clear_photo_upload_state(self, user_id):
+        """Clear photo upload state"""
+        if user_id in self.photo_upload_states:
+            del self.photo_upload_states[user_id]
 
     def update_config(self, new_config):
         """Update spam bot configuration"""
@@ -2075,103 +2089,22 @@ async def process_spam_post_document(message: Message, state: FSMContext):
                 # Download the photo
                 await message.bot.download(doc.file_id, photo_path)
                 
-                await message.answer(
-                    f"✅ Фото для поста '{post_name}' успешно добавлено!\n\n"
-                    f"Путь к фото: {photo_path}",
-                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="📝 Редактировать текст", callback_data=f"spam_edit_post_{post_name}")],
-                        [InlineKeyboardButton(text="📰 Управление постами", callback_data="spam_manage_posts")]
-                    ])
-                )
-                
-                await state.clear()
-            else:
-                await message.answer("❌ Неподдерживаемый формат изображения. Используйте JPG, PNG, GIF, BMP или WEBP.")
-        else:
-            await message.answer("❌ Нет активного поста для добавления фото. Сначала создайте или выберите пост.")
+                # Clear the state
+                if message.from_user.id in spam_manager.photo_upload_states:
+                    del spam_manager.photo_upload_states[message.from_user.id]
+        
+        await message.answer(
+            f"✅ Фото для поста '{post_name}' успешно загружено!\n\n"
+            f"Фото сохранено как: {photo_path}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📝 Редактировать пост", callback_data=f"spam_edit_post_{post_name}")],
+                [InlineKeyboardButton(text="📦 Заменить фото", callback_data=f"spam_add_photo_{post_name}")],
+                [InlineKeyboardButton(text="📰 Управление постами", callback_data="spam_manage_posts")]
+            ])
+        )
     else:
-        await message.answer("❌ Отправленный файл не является изображением. Пожалуйста, отправьте изображение.")
-
-
-@dp.callback_query(F.data == "spam_add_post")
-async def cb_spam_add_post(query: CallbackQuery, state: FSMContext):
-    """Prompt to add a new post"""
-    if query.from_user.id not in ADMIN_IDS:
-        await query.answer("❌ У вас нет прав для использования этой команды.", show_alert=True)
-        return
-
-    await query.message.edit_text(
-        "<b>📝 Добавить новый пост</b>\n\n"
-        "Введите название нового поста (латиницей, без пробелов и специальных символов):\n\n"
-        "Например: 'post1', 'announcement', 'news'",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="spam_manage_posts")]
-        ]),
-        parse_mode="HTML"
-    )
-
-    await state.set_state(FormState.waiting_for_new_post_name)
-
-
-@dp.message(FormState.waiting_for_increase_amount)
-async def process_spam_add_post_name(message: Message, state: FSMContext):
-    """Process new post name"""
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("❌ У вас нет прав для использования этой команды.")
-        return
-
-    post_name = message.text.strip()
-
-    # Validate post name (only alphanumeric and underscore)
-    if not post_name or not post_name.replace('_', '').isalnum():
-        await message.answer("❌ Неверное название поста. Используйте только буквы, цифры и символ подчеркивания.")
-        return
-
-    # Create post file
-    post_file = f"spam_bot/texts/{post_name}.txt"
-    os.makedirs(os.path.dirname(post_file), exist_ok=True)
-
-    with open(post_file, 'w', encoding='utf-8') as f:
-        f.write("")  # Empty post content initially
-
-    spam_manager.add_log(f"Post '{post_name}' created by admin")
-
-    await message.answer(
-        f"✅ Пост '{post_name}' создан!\n\n"
-        "Теперь отправьте текст для этого поста:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="spam_manage_posts")]
-        ])
-    )
-
-    # Store post name for next step
-    await state.update_data(new_post_name=post_name)
-    # We'll continue with text input in a separate handler
-    # For now just clear state
-    await state.clear()
-
-
-@dp.callback_query(F.data.startswith("spam_add_photo_"))
-async def cb_spam_add_photo(query: CallbackQuery):
-    """Prompt to add photo for post"""
-    if query.from_user.id not in ADMIN_IDS:
-        await query.answer("❌ У вас нет прав для использования этой команды.", show_alert=True)
-        return
-
-    post_name = query.data.split("_")[3]  # Extract post name from callback data
-
-    await query.message.edit_text(
-        f"<b>📦 Добавить фото к посту '{post_name}'</b>\n\n"
-        f"Фото для поста '{post_name}' должно иметь название '{post_name}.jpg' (или .png, .jpeg) и находиться в папке 'spam_bot/photos/'.\n\n"
-        f"Поддерживаемые форматы: .jpg, .jpeg, .png\n\n"
-        f"Для добавления фото загрузите файл в папку на сервере или используйте систему загрузки (разработка).",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📝 Редактировать пост", callback_data=f"spam_edit_post_{post_name}")],
-            [InlineKeyboardButton(text="📰 Управление постами", callback_data="spam_manage_posts")],
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="spam_manage_posts")]
-        ]),
-        parse_mode="HTML"
-    )
+        # If not in photo upload state, handle as usual (could be a different handler)
+        pass
 
 
 @dp.callback_query(F.data == "spam_delete_post_list")
@@ -2621,6 +2554,90 @@ async def process_spam_edit_post_text(message: Message, state: FSMContext):
     else:
         await message.answer("❌ Ошибка состояния. Попробуйте начать заново.")
         await state.clear()
+
+
+# Add handler for photo uploads in any state
+@dp.message(F.photo)
+async def handle_photo_upload(message: Message):
+    """Handle photo uploads for posts"""
+    if message.from_user.id not in ADMIN_IDS:
+        return  # Don't process if not admin
+    
+    # Check if user is in photo upload state
+    post_name = await spam_manager.get_photo_upload_state(message.from_user.id)
+    
+    if post_name:
+        # Get the highest quality photo
+        photo = message.photo[-1]  # Last element is the highest quality
+        
+        # Create file with the same name as post
+        file_extension = '.jpg'  # Telegram photos are usually jpg
+        photo_path = f"spam_bot/photos/{post_name}{file_extension}"
+        os.makedirs(os.path.dirname(photo_path), exist_ok=True)
+        
+        # Download the photo
+        await message.bot.download(photo.file_id, photo_path)
+        
+        # Clear the state
+        await spam_manager.clear_photo_upload_state(message.from_user.id)
+        
+        await message.answer(
+            f"✅ Фото для поста '{post_name}' успешно загружено!\n\n"
+            f"Фото сохранено как: {photo_path}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📝 Редактировать пост", callback_data=f"spam_edit_post_{post_name}")],
+                [InlineKeyboardButton(text="📦 Заменить фото", callback_data=f"spam_add_photo_{post_name}")],
+                [InlineKeyboardButton(text="📰 Управление постами", callback_data="spam_manage_posts")]
+            ])
+        )
+    else:
+        # If not in photo upload state, handle as a general photo
+        pass
+
+
+@dp.message(F.document)
+async def handle_document_upload(message: Message):
+    """Handle document uploads (for images)"""
+    if message.from_user.id not in ADMIN_IDS:
+        return  # Don't process if not admin
+    
+    # Check if it's an image document
+    doc = message.document
+    if doc.mime_type and doc.mime_type.startswith('image/'):
+    # Check if user is in photo upload state
+    post_name = spam_manager.photo_upload_states.get(message.from_user.id)
+        
+        if post_name:
+            # Extract file extension from original filename
+            file_extension = os.path.splitext(doc.file_name)[1].lower()
+            if file_extension in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']:
+                photo_path = f"spam_bot/photos/{post_name}{file_extension}"
+                os.makedirs(os.path.dirname(photo_path), exist_ok=True)
+                
+                # Download the photo
+                await message.bot.download(doc.file_id, photo_path)
+                
+    # Clear the state
+    if message.from_user.id in spam_manager.photo_upload_states:
+        del spam_manager.photo_upload_states[message.from_user.id]
+                
+                await message.answer(
+                    f"✅ Фото для поста '{post_name}' успешно загружено!\n\n"
+                    f"Фото сохранено как: {photo_path}",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="📝 Редактировать пост", callback_data=f"spam_edit_post_{post_name}")],
+                        [InlineKeyboardButton(text="📦 Заменить фото", callback_data=f"spam_add_photo_{post_name}")],
+                        [InlineKeyboardButton(text="📰 Управление постами", callback_data="spam_manage_posts")]
+                    ])
+                )
+            else:
+                await message.answer("❌ Неподдерживаемый формат изображения. Используйте JPG, PNG, GIF, BMP или WEBP.")
+        else:
+            # If not in photo upload state, handle as a general document
+            pass
+    else:
+        # This isn't an image document, pass to other handlers
+        pass
 
 
 async def main():
