@@ -286,7 +286,7 @@ def build_products_list(sheet_name: str, offset: int = 0) -> InlineKeyboardMarku
 
         for product in page_products:
             display_name = f"{product['name']} ({product['article']})" if product['article'] != 'Без артикула' else \
-            product['name']
+                product['name']
             safe_sheet_name = sheet_name.replace("_", "|_|")  # Custom escaping for underscores
             keyboard.append([
                 InlineKeyboardButton(
@@ -1612,7 +1612,7 @@ async def cb_spam_manage_channels(query: CallbackQuery):
     if query.from_user.id not in ADMIN_IDS:
         await query.answer("❌ У вас нет прав для использования этой команды.", show_alert=True)
         return
-    
+
     # Read current channels from channels.txt file
     channels_file = "spam_bot/channels.txt"
     channels = []
@@ -1622,24 +1622,25 @@ async def cb_spam_manage_channels(query: CallbackQuery):
                 line = line.strip()
                 if line:  # Skip empty lines
                     channels.append(line)
-    
+
     keyboard = []
-    
+
     # Show current channels
     for channel in channels:
         # Convert channel to string and encode special characters for callback data
         channel_str = str(channel)
         # Replace problematic characters for callback data
         safe_channel = channel_str.replace("-", "_minus_").replace("@", "_at_")
-        keyboard.append([InlineKeyboardButton(text=f"📡 {str(channel)}", callback_data=f"spam_channel_action_{safe_channel}")])
-    
+        keyboard.append(
+            [InlineKeyboardButton(text=f"📡 {str(channel)}", callback_data=f"spam_channel_action_{safe_channel}")])
+
     # Add channel management buttons
     keyboard.append([InlineKeyboardButton(text="➕ Добавить канал", callback_data="spam_add_channel")])
     if channels:
         keyboard.append([InlineKeyboardButton(text="🗑️ Удалить канал", callback_data="spam_delete_channel_list")])
-    
+
     keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="spam_manage_posts")])
-    
+
     await query.message.edit_text(
         "<b>📡 Управление каналами</b>\n\n"
         f"Каналы для рассылки: {len(channels)}\n\n"
@@ -1678,28 +1679,28 @@ async def process_spam_add_channel(message: Message, state: FSMContext):
         await message.answer("❌ У вас нет прав для использования этой команды.")
         await state.clear()
         return
-    
+
     # Get current state data to determine what we're adding
     data = await state.get_data()
-    
+
     # If we're in config update state (interval changes), use that handler
     if 'setting' in data:
         await process_spam_config_update(message, state)  # This function handles config changes
         return
-    
+
     # Otherwise, treat as adding a channel
     channel_input = message.text.strip()
-    
+
     # Validate channel format
     if not channel_input:
         await message.answer("❌ Пожалуйста, введите канал.")
         return
-    
+
     # Check if it's a username (starts with @) or numeric ID (starts with -)
     if not (channel_input.startswith('@') or (channel_input.lstrip('-').isdigit() and channel_input.count('-') <= 1)):
         await message.answer("❌ Неверный формат канала. Используйте @username или числовой ID (-1001234567890).")
         return
-    
+
     # Read current channels from file
     channels_file = "spam_bot/channels.txt"
     existing_channels = []
@@ -1709,7 +1710,7 @@ async def process_spam_add_channel(message: Message, state: FSMContext):
                 line = line.strip()
                 if line:  # Skip empty lines
                     existing_channels.append(line)
-    
+
     # Convert channel_input to proper type (int for numeric, str for username)
     try:
         if channel_input.lstrip('-').isdigit():
@@ -1719,20 +1720,20 @@ async def process_spam_add_channel(message: Message, state: FSMContext):
     except ValueError:
         await message.answer("❌ Неверный формат числового ID канала.")
         return
-    
+
     # Check if channel already exists
     if str(channel_to_add) in existing_channels:
         await message.answer(f"⚠️ Канал '{channel_to_add}' уже существует в списке!")
         await state.clear()
         return
-    
+
     # Add channel to file
     with open(channels_file, 'a', encoding='utf-8') as f:
         f.write(str(channel_to_add) + '\n')
-    
+
     spam_manager.add_log(f"Channel '{channel_to_add}' added by admin")
     await message.answer(f"✅ Канал '{channel_to_add}' добавлен!")
-    
+
     # Clear state
     await state.clear()
 
@@ -1820,7 +1821,7 @@ async def cb_spam_do_delete_channel(query: CallbackQuery):
         # Read all channels
         with open(channels_file, 'r', encoding='utf-8') as f:
             lines = f.readlines()
-        
+
         # Find and remove the channel
         updated_lines = []
         channel_found = False
@@ -1830,12 +1831,12 @@ async def cb_spam_do_delete_channel(query: CallbackQuery):
                 channel_found = True
             else:
                 updated_lines.append(line)
-        
+
         if channel_found:
             # Write back updated list
             with open(channels_file, 'w', encoding='utf-8') as f:
                 f.writelines(updated_lines)
-            
+
             spam_manager.add_log(f"Channel '{original_channel}' deleted by admin")
             await query.answer(f"✅ Канал '{original_channel}' удален!")
         else:
@@ -2056,33 +2057,32 @@ async def process_spam_post_document(message: Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("❌ У вас нет прав для использования этой команды.")
         return
-
+    
     # Check if document is an image
     doc = message.document
     if doc.mime_type and doc.mime_type.startswith('image/'):
         data = await state.get_data()
         post_name = data.get('editing_post')
-
+        
         if post_name:
             # Extract file extension
             file_extension = os.path.splitext(doc.file_name)[1].lower()
             if file_extension in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']:
                 photo_path = f"spam_bot/photos/{post_name}{file_extension}"
                 os.makedirs(os.path.dirname(photo_path), exist_ok=True)
-
+                
                 # Download the photo
                 await message.bot.download(doc.file_id, photo_path)
-
+                
                 await message.answer(
                     f"✅ Фото для поста '{post_name}' успешно добавлено!\n\n"
                     f"Путь к фото: {photo_path}",
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="📝 Редактировать текст",
-                                              callback_data=f"spam_edit_post_{post_name}")],
+                        [InlineKeyboardButton(text="📝 Редактировать текст", callback_data=f"spam_edit_post_{post_name}")],
                         [InlineKeyboardButton(text="📰 Управление постами", callback_data="spam_manage_posts")]
                     ])
                 )
-
+                
                 await state.clear()
             else:
                 await message.answer("❌ Неподдерживаемый формат изображения. Используйте JPG, PNG, GIF, BMP или WEBP.")
@@ -2090,85 +2090,6 @@ async def process_spam_post_document(message: Message, state: FSMContext):
             await message.answer("❌ Нет активного поста для добавления фото. Сначала создайте или выберите пост.")
     else:
         await message.answer("❌ Отправленный файл не является изображением. Пожалуйста, отправьте изображение.")
-
-
-@dp.message(F.document, FormState.waiting_for_new_post_text)
-async def process_spam_new_post_document(message: Message, state: FSMContext):
-    """Process document image attachment for new post"""
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("❌ У вас нет прав для использования этой команды.")
-        return
-
-    # Check if document is an image
-    doc = message.document
-    if doc.mime_type and doc.mime_type.startswith('image/'):
-        data = await state.get_data()
-        post_name = data.get('new_post_name')
-
-        if post_name:
-            # Extract file extension
-            file_extension = os.path.splitext(doc.file_name)[1].lower()
-            if file_extension in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp']:
-                photo_path = f"spam_bot/photos/{post_name}{file_extension}"
-                os.makedirs(os.path.dirname(photo_path), exist_ok=True)
-
-                # Download the photo
-                await message.bot.download(doc.file_id, photo_path)
-
-                await message.answer(
-                    f"✅ Фото для нового поста '{post_name}' успешно добавлено!\n\n"
-                    f"Путь к фото: {photo_path}",
-                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="📝 Редактировать текст",
-                                              callback_data=f"spam_edit_post_{post_name}")],
-                        [InlineKeyboardButton(text="📰 Управление постами", callback_data="spam_manage_posts")]
-                    ])
-                )
-
-                await state.clear()
-            else:
-                await message.answer("❌ Неподдерживаемый формат изображения. Используйте JPG, PNG, GIF, BMP или WEBP.")
-        else:
-            await message.answer("❌ Ошибка: нет активного поста для добавления фото.")
-    else:
-        await message.answer("❌ Отправленный файл не является изображением. Пожалуйста, отправьте изображение.")
-
-
-@dp.message(FormState.waiting_for_new_post_text)
-async def process_spam_add_post_text_step2(message: Message, state: FSMContext):
-    """Process new post text step 2"""
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("❌ У вас нет прав для использования этой команды.")
-        return
-
-    data = await state.get_data()
-    post_name = data.get('new_post_name')
-
-    if not post_name:
-        await message.answer("❌ Ошибка: пост не найден. Попробуйте создать пост заново.")
-        await state.clear()
-        return
-
-    # Update post content
-    post_file = f"spam_bot/texts/{post_name}.txt"
-    os.makedirs(os.path.dirname(post_file), exist_ok=True)
-
-    with open(post_file, 'w', encoding='utf-8') as f:
-        f.write(message.text)
-
-    spam_manager.add_log(f"Post '{post_name}' text updated by admin")
-
-    await message.answer(
-        f"✅ Пост '{post_name}' создан и текст сохранен!\n\n"
-        f"Текст:\n{message.text}",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📝 Редактировать пост", callback_data=f"spam_edit_post_{post_name}")],
-            [InlineKeyboardButton(text="📦 Добавить фото", callback_data=f"spam_add_photo_{post_name}")],
-            [InlineKeyboardButton(text="📰 Управление постами", callback_data="spam_manage_posts")]
-        ])
-    )
-
-    await state.clear()
 
 
 @dp.callback_query(F.data == "spam_add_post")
@@ -2671,20 +2592,20 @@ async def process_spam_edit_post_text(message: Message, state: FSMContext):
     if message.from_user.id not in ADMIN_IDS:
         await message.answer("❌ У вас нет прав для использования этой команды.")
         return
-    
+
     data = await state.get_data()
     post_name = data.get('editing_post')
-    
+
     if post_name:
         # Update post content
         post_file = f"spam_bot/texts/{post_name}.txt"
         os.makedirs(os.path.dirname(post_file), exist_ok=True)
-        
+
         with open(post_file, 'w', encoding='utf-8') as f:
             f.write(message.text)
-        
+
         spam_manager.add_log(f"Post '{post_name}' updated by admin")
-        
+
         await message.answer(
             f"✅ Пост '{post_name}' обновлен!\n\n"
             f"Новый текст:\n{message.text}",
@@ -2694,7 +2615,7 @@ async def process_spam_edit_post_text(message: Message, state: FSMContext):
                 [InlineKeyboardButton(text="📰 Управление постами", callback_data="spam_manage_posts")]
             ])
         )
-        
+
         await state.clear()
     else:
         await message.answer("❌ Ошибка состояния. Попробуйте начать заново.")
